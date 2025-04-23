@@ -1,0 +1,4 @@
+class Wad
+{
+private:
+};
