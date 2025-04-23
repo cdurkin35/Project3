@@ -14,6 +14,16 @@ bool endsWith(const std::string& str, const std::string& suffix)
         && str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
+// Normalize path
+std::string norm(const std::string& p)
+{
+    if (p.empty()) return p;                  // Leave empty
+    std::string s = p;
+    while (s.size() > 1 && s.back() == '/')   // STrip trailing slashes
+        s.pop_back();
+    return s;
+}
+
 // Wad implementation
 
 // Destructor
@@ -129,28 +139,43 @@ std::string Wad::getMagic() { return std::string(header.magic, 4); }
 
 bool Wad::isContent(const std::string& path)
 {
-    Node* node = resolve(path);
-    return !(node->isDir);
+    std::string clean = norm(path);
+    if (clean.empty()) return false;
+
+    Node* n = resolve(clean);
+    return n && !n->isDir;
 }
 
 bool Wad::isDirectory(const std::string& path)
 {
-    Node* node = resolve(path);
-    return node->isDir;
+    std::string clean = norm(path);
+    if (clean.empty()) return false;
+
+    Node* node = resolve(clean);
+    return node && node->isDir;
 }
 
 int Wad::getSize(const std::string& path)
 {
-    Node* node = resolve(path);
-    return !(node->isDir) ? (node->length) : -1;
+    std::string clean = norm(path);
+    if (clean.empty()) return false;
+
+    Node* node = resolve(clean);
+    return (node && !node->isDir) ? (node->length) : -1;
 }
 
 int Wad::getContents(const std::string& path, char* buffer, int length, int offset)
 {
+    std::string clean = norm(path);
+    if (clean.empty()) return false;
+
     // Get node from path
-    Node* node = resolve(path);
-    if (!node || node->isDir)
+    Node* node = resolve(clean);
+    if (!node || node->isDir || !buffer || length <= 0)
         return -1;
+
+    if (offset >= node->length)
+	return 0;
 
     // Calculate size/location of contents that is being retrieved
     size_t available = node->length - offset;
@@ -165,10 +190,16 @@ int Wad::getContents(const std::string& path, char* buffer, int length, int offs
 
 int Wad::getDirectory(const std::string& path, std::vector<std::string>* directory)
 {
+    if (!directory)
+	return -1;
     // Clear vector for safety
     directory->clear();
     // Get node from path
-    Node* node = resolve(path);
+
+    std::string clean = norm(path);
+    if (clean.empty()) return -1;
+
+    Node* node = resolve(clean);
     if (!node || !(node->isDir))
         return -1;
 
@@ -181,17 +212,23 @@ int Wad::getDirectory(const std::string& path, std::vector<std::string>* directo
 
 void Wad::createDirectory(const std::string& path)
 {
+    std::string cleaned = norm(path);
+    if (cleaned.empty() || cleaned == "/") return;
+
     // Split the path up
-    int slash = path.find_last_of('/');
-    std::string parentPath = (slash == 0) ? "/" : path.substr(0, slash);
-    std::string dirName = path.substr(slash + 1);
+    int slash = cleaned.find_last_of('/');
+    std::string parentPath = (slash == 0) ? "/" : cleaned.substr(0, slash);
+    std::string dirName = cleaned.substr(slash + 1);
 
     // Check if valid directory name
     if (dirName.empty() || dirName.size() > 2)
         return;
 
+    std::string cleanParent = norm(parentPath);
+    if (cleanParent.empty()) return;
+
     // Get parent node
-    Node* parent = resolve(parentPath);
+    Node* parent = resolve(cleanParent);
 
     // Make sure parent is not a Map Marker
     if (parent->name.size() == 4 && parent->name[0] == 'E' && std::isdigit(parent->name[1])
@@ -279,13 +316,22 @@ void Wad::createDirectory(const std::string& path)
 void Wad::createFile(const std::string& path)
 {
     // Split the path up
-    int slash = path.find_last_of('/');
-    std::string parentPath = (slash == 0) ? "/" : path.substr(0, slash);
-    std::string fileName = path.substr(slash + 1);
+    std::string cleaned = norm(path);
+    if (cleaned.empty() || cleaned == "/")
+	return;
+
+    int slash = cleaned.find_last_of('/');
+    std::string parentPath = (slash == 0) ? "/" : cleaned.substr(0, slash);
+    std::string fileName = cleaned.substr(slash + 1);
 
     // Check if valid directory name
     if (fileName.empty() || fileName.size() > 8)
         return;
+
+    // Check if fileName is a Map Marker
+    if (fileName.size() == 4 && fileName[0] == 'E' && std::isdigit(fileName[1]) &&
+	fileName[2] == 'M' && std::isdigit(fileName[3]))
+    return;
 
     // Get parent node
     Node* parent = resolve(parentPath);
